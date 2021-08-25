@@ -1,0 +1,176 @@
+---
+title: "choco"
+author: "Samue Wong"
+date: "12/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load pack, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(e1071)
+library(ROCR)
+library(epiDisplay)
+library(InformationValue)
+library(GGally)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(randomForest)
+```
+
+```{r input data}
+choco<- data.frame(read.csv('E:\\ousem3\\Datamining\\Exam\\chocolate.csv'))
+
+head(choco,n=5)
+```
+```{r bar chart}
+tab1(choco$beans)
+tab1(choco$cocoa_butter)
+tab1(choco$vanilla)
+tab1(choco$lecithin)
+tab1(choco$salt)
+tab1(choco$sugar)
+tab1(choco$sweetener_without_sugar)
+tab1(choco$rating)
+
+```
+
+
+```{r select variables}
+df<-choco
+df<- df[-c(11)]
+df<- df[c(8:16)]
+
+df$cocoa_butter<-as.factor(df$cocoa_butter)
+df$vanilla<-as.factor(df$vanilla)
+df$lecithin<-as.factor(df$lecithin)
+df$salt<-as.factor(df$salt)
+df$sugar<-as.factor(df$sugar)
+df$sweetener_without_sugar<-as.factor(df$sweetener_without_sugar)
+ggpairs(df)
+```
+
+```{r convert 3 class }
+df2 <- df
+for (i in 1:nrow(df2)) {
+  if(df2$rating[i]>=3.5){
+    df2$rating[i]=1 ##good
+  }else if(df2$rating[i]<3.5&df2$rating[i]>=3){
+    df2$rating[i]=2
+  }else{
+    df2$rating[i]=3
+  }
+}
+tab1(df2$rating)
+```
+```{r set sample size}
+smp_size <- floor(0.8 * nrow(df2)) ##sample size set to 0.5
+set.seed(1) ## set random seed
+train_ind <- sample(seq_len(nrow(df2)), size = smp_size) ##split data
+train <- df2[train_ind, ]
+test <- df2[-train_ind, ]
+train[["rating"]] = factor(train[["rating"]]) ## convert to factor
+```
+
+```{r svm with 3 label}
+tune_out = tune(svm, rating~., data = train, kernel = "radial",scale = FALSE,
+ranges = list(cost = c(0.1,1,10,100,1000), gamma = c(0.5,1,2,3,4))) 
+bestmod = tune_out$best.model
+summary(bestmod)
+table(true = test$rating, pred = predict(tune_out$best.model, newdata = test))
+```
+```{r convert to 2 class}
+df3 <- df
+for (i in 1:nrow(df3)) {
+  if(df3$rating[i]>=3.25){
+    df3$rating[i]=1 ##good
+  }else{
+    df3$rating[i]=0
+  }
+}
+tab1(df3$rating)
+```
+```{r sample size 2}
+smp_size <- floor(0.8 * nrow(df3)) ##sample size set to 0.5
+set.seed(1) ## set random seed
+train_ind <- sample(seq_len(nrow(df3)), size = smp_size) ##split data
+train <- df3[train_ind, ]
+test <- df3[-train_ind, ]
+train[["rating"]] = factor(train[["rating"]]) ## convert to factor
+```
+
+```{r svm with 2 label}
+tune_out = tune(svm, rating~., data = train, kernel = "radial",scale = FALSE,
+ranges = list(cost = c(0.1,1,10,100,1000), gamma = c(0.5,1,2,3,4))) 
+bestmod = tune_out$best.model
+summary(bestmod)
+table(true = test$rating, pred = predict(tune_out$best.model, newdata = test))
+
+```
+```{r sample size 3}
+
+smp_size <- floor(0.8 * nrow(df3)) ##sample size set to 0.5
+set.seed(100) ## set random seed
+train_ind <- sample(seq_len(nrow(df3)), size = smp_size) ##split data
+train <- train_ind
+test <- df3[-train_ind, ]
+```
+
+
+```{r log. model  8:2}
+glm.fit <- glm(rating ~ ., data = df3,subset = train, family = "binomial"(link="logit"))
+summary(glm.fit)
+predicted=predict(glm.fit,test,type="response") 
+optCutOff <- optimalCutoff(test$rating, predicted)[1]
+misClassError(test$rating, predicted, threshold = optCutOff)
+Concordance(test$rating, predicted)##higher is better
+confusionMatrix(test$rating, predicted, threshold = optCutOff)
+```
+
+```{r log 5:5}
+test<-df3[1:1112,]
+glm.fit <- glm(rating ~ ., data = df3,subset = 1113:2224, family = "binomial"(link="logit"))
+predicted=predict(glm.fit,test,type="response") 
+optCutOff <- optimalCutoff(test$rating, predicted)
+misClassError(test$rating, predicted, threshold = optCutOff)
+Concordance(test$rating, predicted)##higher is better
+confusionMatrix(test$rating, predicted, threshold = optCutOff)
+summary(glm.fit)
+```
+
+
+```{r convert to 0 & 1}
+df3 <- df
+for (i in 1:nrow(df3)) {
+  if(df3$rating[i]>=3.25){
+    df3$rating[i]=1 ##good
+  }else{
+    df3$rating[i]=0
+  }
+}
+tab1(df3$rating)
+smp_size <- floor(0.8 * nrow(df3)) ##sample size set to 0.5
+set.seed(1) ## set random seed
+train_ind <- sample(seq_len(nrow(df3)), size = smp_size) ##split data
+train <- df3[train_ind, ]
+test <- df3[-train_ind, ]
+train[["rating"]] = factor(train[["rating"]]) ## convert to factor
+```
+```{r tree}
+tree <- rpart(rating~., data=train,method = 'class', parms=list(split="information"))
+fancyRpartPlot(tree)
+pred<-predict(tree, test, type = 'class')
+table(true=test$rating,pred)
+```
+```{r Random Forest}
+rantree<-randomForest(rating ~ ., data = train, ntree=200,importance = TRUE) ## set 200 tree in this model 
+plot(rantree)
+sumran <- summary(rantree)
+```
+
